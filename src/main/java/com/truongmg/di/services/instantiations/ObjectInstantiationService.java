@@ -8,10 +8,10 @@ import com.truongmg.di.models.ServiceDetails;
 
 public interface ObjectInstantiationService {
 
-    void createInstance(ServiceDetails<?> serviceDetails, Object... constructorParams) throws ServiceInstantiationException;
+    void createInstance(ServiceDetails serviceDetails, Object... constructorParams) throws ServiceInstantiationException;
 
-    void createBeanInstance(ServiceBeanDetails<?> serviceBeanDetails) throws BeanInstantiationException;
+    void createBeanInstance(ServiceBeanDetails serviceBeanDetails) throws BeanInstantiationException;
 
-    void destroyInstance(ServiceDetails<?> serviceDetails) throws PreDestroyExecutionException;
+    void destroyInstance(ServiceDetails serviceDetails) throws PreDestroyExecutionException;
 
 }

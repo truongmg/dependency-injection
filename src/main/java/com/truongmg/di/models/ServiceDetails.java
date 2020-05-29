@@ -6,18 +6,23 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-public class ServiceDetails<T> {
+public class ServiceDetails {
 
-    private Class<T> serviceType;
+    private static final String PROXY_ALREADY_CREATED_MSG = "Proxy instance already created.";
 
-    private Annotation annotation;
+    private Class<?> serviceType;
 
-    private Constructor<T> targetConstructor;
+    private List<Class<? extends Annotation>> annotations;
 
-    private T instance;
+    private Constructor<?> targetConstructor;
+
+    private Object instance;
+
+    private Object proxyInstance;
 
     private Method postConstructMethod;
 
@@ -25,19 +30,20 @@ public class ServiceDetails<T> {
 
     private Method[] beans;
 
-    private final List<ServiceDetails<?>> dependantServices;
+    private final List<ServiceDetails> dependantServices;
 
     private ScopeType scopeType;
 
     public ServiceDetails() {
         this.dependantServices = new ArrayList<>();
+        this.annotations = new ArrayList<>();
     }
 
-    public ServiceDetails(Class<T> serviceType, Annotation annotation, Constructor<T> targetConstructor,
+    public ServiceDetails(Class<?> serviceType, Collection<Class<? extends Annotation>> annotations, Constructor<?> targetConstructor,
                           Method postConstructMethod, Method preDestroyMethod, Method[] beans, ScopeType scopeType) {
         this();
         this.serviceType = serviceType;
-        this.annotation = annotation;
+        this.addAnnotations(annotations);
         this.targetConstructor = targetConstructor;
         this.postConstructMethod = postConstructMethod;
         this.preDestroyMethod = preDestroyMethod;
@@ -45,36 +51,51 @@ public class ServiceDetails<T> {
         this.scopeType = scopeType;
     }
 
-    public Class<T> getServiceType() {
+    public Class<?> getServiceType() {
         return serviceType;
     }
 
-    public void setServiceType(Class<T> serviceType) {
+    public void setServiceType(Class<?> serviceType) {
         this.serviceType = serviceType;
     }
 
-    public Annotation getAnnotation() {
-        return annotation;
+    public List<Class<? extends Annotation>> getAnnotations() {
+        return annotations;
     }
 
-    public void setAnnotation(Annotation annotation) {
-        this.annotation = annotation;
+    public void addAnnotation(Class<? extends Annotation> annotation) {
+        this.annotations.add(annotation);
     }
 
-    public Constructor<T> getTargetConstructor() {
+    public void addAnnotations(Collection<Class<? extends Annotation>> annotations) {
+        this.annotations.addAll(annotations);
+    }
+
+    public Constructor<?> getTargetConstructor() {
         return targetConstructor;
     }
 
-    public void setTargetConstructor(Constructor<T> targetConstructor) {
+    public void setTargetConstructor(Constructor<?> targetConstructor) {
         this.targetConstructor = targetConstructor;
     }
 
-    public T getInstance() {
+    public Object getActualInstance() {
         return instance;
     }
 
+    public Object getProxyInstance() {
+        return proxyInstance;
+    }
+
+    public void setProxyInstance(Object proxyInstance) {
+        if (this.proxyInstance != null) {
+            throw new IllegalArgumentException(PROXY_ALREADY_CREATED_MSG);
+        }
+        this.proxyInstance = proxyInstance;
+    }
+
     public void setInstance(Object instance) {
-        this.instance = (T) instance;
+        this.instance = instance;
     }
 
     public Method getPostConstructMethod() {
@@ -93,11 +114,11 @@ public class ServiceDetails<T> {
         this.beans = beans;
     }
 
-    public List<ServiceDetails<?>> getDependantServices() {
+    public List<ServiceDetails> getDependantServices() {
         return Collections.unmodifiableList(this.dependantServices);
     }
 
-    public void addDependantService(ServiceDetails<?> serviceDetail) {
+    public void addDependantService(ServiceDetails serviceDetail) {
         this.dependantServices.add(serviceDetail);
     }
 

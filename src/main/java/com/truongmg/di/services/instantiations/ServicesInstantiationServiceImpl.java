@@ -5,6 +5,7 @@ import com.truongmg.di.exceptions.ServiceInstantiationException;
 import com.truongmg.di.models.EnqueuedServiceDetails;
 import com.truongmg.di.models.ServiceBeanDetails;
 import com.truongmg.di.models.ServiceDetails;
+import com.truongmg.di.utils.ProxyUtils;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -23,7 +24,7 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
 
     private final List<Class<?>> allAvailableClasses;
 
-    private final List<ServiceDetails<?>> instantiatedServices;
+    private final List<ServiceDetails> instantiatedServices;
 
     public ServicesInstantiationServiceImpl(InstantiationConfiguration configuration, ObjectInstantiationService instantiationService) {
         this.configuration = configuration;
@@ -34,7 +35,7 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
     }
 
     @Override
-    public List<ServiceDetails<?>> instantiateServicesAndBeans(Set<ServiceDetails<?>> mappedServices) throws ServiceInstantiationException {
+    public List<ServiceDetails> instantiateServicesAndBeans(Set<ServiceDetails> mappedServices) throws ServiceInstantiationException {
         this.init(mappedServices);
         this.checkForMissingServices(mappedServices);
 
@@ -47,9 +48,12 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
 
             EnqueuedServiceDetails enqueuedServiceDetails = this.enqueuedServiceDetails.removeFirst();
             if (enqueuedServiceDetails.isResolved()) {
-                ServiceDetails<?> serviceDetails = enqueuedServiceDetails.getServiceDetails();
+                ServiceDetails serviceDetails = enqueuedServiceDetails.getServiceDetails();
                 Object[] dependencyInstanced = enqueuedServiceDetails.getDependencyInstanced();
+
                 this.instantiationService.createInstance(serviceDetails, dependencyInstanced);
+                ProxyUtils.createProxyInstance(serviceDetails, enqueuedServiceDetails.getDependencyInstanced());
+
                 this.registerInstantiatedService(serviceDetails);
                 this.registerBeans(serviceDetails);
             } else {
@@ -61,32 +65,34 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
         return instantiatedServices;
     }
 
-    private void registerBeans(ServiceDetails<?> serviceDetails) {
+    private void registerBeans(ServiceDetails serviceDetails) {
         for (Method beanMethod : serviceDetails.getBeans()) {
-            ServiceBeanDetails<?> beanDetails = new ServiceBeanDetails<>(beanMethod.getReturnType(), beanMethod, serviceDetails);
+            ServiceBeanDetails beanDetails = new ServiceBeanDetails(beanMethod.getReturnType(), beanMethod, serviceDetails);
             this.instantiationService.createBeanInstance(beanDetails);
+            beanDetails.setProxyInstance(beanDetails.getActualInstance());
+
             this.registerInstantiatedService(beanDetails);
         }
     }
 
-    private void registerInstantiatedService(ServiceDetails<?> serviceDetails) {
+    private void registerInstantiatedService(ServiceDetails newlyCreatedService) {
 
-        if (!(serviceDetails instanceof ServiceBeanDetails)) {
-            this.updateDependantServices(serviceDetails);
+        if (!(newlyCreatedService instanceof ServiceBeanDetails)) {
+            this.updateDependantServices(newlyCreatedService);
         }
 
-        this.instantiatedServices.add(serviceDetails);
+        this.instantiatedServices.add(newlyCreatedService);
 
         for (EnqueuedServiceDetails enqueuedService : this.enqueuedServiceDetails) {
-            if (enqueuedService.isDependencyRequired(serviceDetails.getServiceType())) {
-                enqueuedService.addDependencyInstance(serviceDetails.getInstance());
+            if (enqueuedService.isDependencyRequired(newlyCreatedService.getServiceType())) {
+                enqueuedService.addDependencyInstance(newlyCreatedService.getProxyInstance());
             }
         }
     }
 
-    private void updateDependantServices(ServiceDetails<?> newService) {
+    private void updateDependantServices(ServiceDetails newService) {
         for (Class<?> parameterType : newService.getTargetConstructor().getParameterTypes()) {
-            for (ServiceDetails<?> serviceDetails : this.instantiatedServices) {
+            for (ServiceDetails serviceDetails : this.instantiatedServices) {
                 if (parameterType.isAssignableFrom(serviceDetails.getServiceType())) {
                     serviceDetails.addDependantService(newService);
                 }
@@ -94,8 +100,8 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
         }
     }
 
-    private void checkForMissingServices(Set<ServiceDetails<?>> mappedServices) {
-        for (ServiceDetails<?> serviceDetails : mappedServices) {
+    private void checkForMissingServices(Set<ServiceDetails> mappedServices) {
+        for (ServiceDetails serviceDetails : mappedServices) {
             for (Class<?> parameterType : serviceDetails.getTargetConstructor().getParameterTypes()) {
                 if (!this.isAssignableTypePresent(parameterType)) {
                     throw new ServiceInstantiationException(
@@ -116,12 +122,12 @@ public class ServicesInstantiationServiceImpl implements ServicesInstantiationSe
         return false;
     }
 
-    private void init(Set<ServiceDetails<?>> mappedServices) {
+    private void init(Set<ServiceDetails> mappedServices) {
         this.enqueuedServiceDetails.clear();
         this.allAvailableClasses.clear();
         this.instantiatedServices.clear();
 
-        for (ServiceDetails<?> serviceDetails : mappedServices) {
+        for (ServiceDetails serviceDetails : mappedServices) {
             this.enqueuedServiceDetails.add(new EnqueuedServiceDetails(serviceDetails));
             this.allAvailableClasses.add(serviceDetails.getServiceType());
             this.allAvailableClasses.addAll(

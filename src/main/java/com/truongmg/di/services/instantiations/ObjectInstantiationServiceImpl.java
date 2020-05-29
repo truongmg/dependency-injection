@@ -16,7 +16,7 @@ public class ObjectInstantiationServiceImpl implements ObjectInstantiationServic
     private static final String INVALID_PARAMETERS_COUNT_MSG = "Invalid parameters count for '%s'.";
 
     @Override
-    public void createInstance(ServiceDetails<?> serviceDetails, Object... constructorParams) throws ServiceInstantiationException {
+    public void createInstance(ServiceDetails serviceDetails, Object... constructorParams) throws ServiceInstantiationException {
         Constructor<?> targetConstructor = serviceDetails.getTargetConstructor();
 
         if (constructorParams.length != targetConstructor.getParameterCount()) {
@@ -33,13 +33,13 @@ public class ObjectInstantiationServiceImpl implements ObjectInstantiationServic
 
     }
 
-    private void callPostConstruct(ServiceDetails<?> serviceDetails) {
+    private void callPostConstruct(ServiceDetails serviceDetails) {
         if (serviceDetails.getPostConstructMethod() == null) {
             return;
         }
 
         try {
-            serviceDetails.getPostConstructMethod().invoke(serviceDetails.getInstance());
+            serviceDetails.getPostConstructMethod().invoke(serviceDetails.getActualInstance());
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new PostConstructionException(e.getMessage(), e);
         }
@@ -47,9 +47,9 @@ public class ObjectInstantiationServiceImpl implements ObjectInstantiationServic
     }
 
     @Override
-    public void createBeanInstance(ServiceBeanDetails<?> serviceBeanDetails) throws BeanInstantiationException {
+    public void createBeanInstance(ServiceBeanDetails serviceBeanDetails) throws BeanInstantiationException {
         Method originMethod = serviceBeanDetails.getOriginMethod();
-        Object rootInstance = serviceBeanDetails.getRootService().getInstance();
+        Object rootInstance = serviceBeanDetails.getRootService().getActualInstance();
 
         try {
             Object instance = originMethod.invoke(rootInstance);
@@ -60,10 +60,10 @@ public class ObjectInstantiationServiceImpl implements ObjectInstantiationServic
     }
 
     @Override
-    public void destroyInstance(ServiceDetails<?> serviceDetails) throws PreDestroyExecutionException {
+    public void destroyInstance(ServiceDetails serviceDetails) throws PreDestroyExecutionException {
         if (serviceDetails.getPreDestroyMethod() != null) {
             try {
-                serviceDetails.getPreDestroyMethod().invoke(serviceDetails.getInstance());
+                serviceDetails.getPreDestroyMethod().invoke(serviceDetails.getActualInstance());
             } catch (IllegalAccessException | InvocationTargetException e) {
                 throw new PreDestroyExecutionException(e.getMessage(), e);
             }

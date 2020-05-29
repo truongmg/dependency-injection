@@ -2,13 +2,13 @@ package com.truongmg.di.models;
 
 public class EnqueuedServiceDetails {
 
-    private final ServiceDetails<?> serviceDetails;
+    private final ServiceDetails serviceDetails;
 
     private final Class<?>[] dependencies;
 
     private final Object[] dependencyInstanced;
 
-    public EnqueuedServiceDetails(ServiceDetails<?> serviceDetails) {
+    public EnqueuedServiceDetails(ServiceDetails serviceDetails) {
         this.serviceDetails = serviceDetails;
         this.dependencies = serviceDetails.getTargetConstructor().getParameterTypes();
         this.dependencyInstanced = new Object[this.dependencies.length];
@@ -18,7 +18,6 @@ public class EnqueuedServiceDetails {
         for (int i = 0; i < this.dependencies.length; i++) {
             if (this.dependencies[i].isAssignableFrom(instance.getClass())) {
                 this.dependencyInstanced[i] = instance;
-                return;
             }
         }
 
@@ -42,7 +41,7 @@ public class EnqueuedServiceDetails {
         return false;
     }
 
-    public ServiceDetails<?> getServiceDetails() {
+    public ServiceDetails getServiceDetails() {
         return serviceDetails;
     }
 
