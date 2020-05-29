@@ -4,6 +4,10 @@ import com.truongmg.di.enums.DirectoryType;
 import com.truongmg.di.models.Directory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 
 public class DirectoryResolverImpl implements DirectoryResolver {
 
@@ -15,6 +19,15 @@ public class DirectoryResolverImpl implements DirectoryResolver {
         return new Directory(directory, directoryType);
     }
 
+    @Override
+    public Directory resolveDirectory(File directory) {
+        try {
+            return new Directory(directory.getCanonicalPath(), this.getDirectoryType(directory.getCanonicalPath()));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     private DirectoryType getDirectoryType(String directory) {
         File file = new File(directory);
         if (!file.isDirectory() && directory.endsWith(JAR_FILE_EXTENSION)) {
@@ -24,7 +37,11 @@ public class DirectoryResolverImpl implements DirectoryResolver {
     }
 
     private String getDirectory(Class<?> cls) {
-        return cls.getProtectionDomain().getCodeSource().getLocation().getFile();
+        try {
+            return URLDecoder.decode(cls.getProtectionDomain().getCodeSource().getLocation().getFile(), StandardCharsets.UTF_8.toString());
+        } catch (UnsupportedEncodingException e) {
+            throw new RuntimeException(e);
+        }
     }
 
 }

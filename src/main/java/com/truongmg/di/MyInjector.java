@@ -11,19 +11,15 @@ import com.truongmg.di.services.DependencyContainerImpl;
 import com.truongmg.di.services.instantiations.*;
 import com.truongmg.di.services.locators.*;
 
+import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 @Service
 public class MyInjector {
-
-    private static final DependencyContainer dependencyContainer;
-
-    static {
-        dependencyContainer = new DependencyContainerImpl();
-    }
 
     public static void main(String[] args) {
         run(MyInjector.class);
@@ -35,27 +31,47 @@ public class MyInjector {
     }
 
     public static DependencyContainer run(Class<?> startupClass, MyConfiguration configuration) {
-        final ServicesScanningService scanningService = new ServicesScanningServiceImpl(configuration.annotations());
-        final ObjectInstantiationService objectInstantiationService = new ObjectInstantiationServiceImpl();
-        final ServicesInstantiationService instantiationService = new ServicesInstantiationServiceImpl(configuration.instantiations(), objectInstantiationService);
-        final Directory directory = new DirectoryResolverImpl().resolveDirectory(startupClass);
+        final String directory = new DirectoryResolverImpl().resolveDirectory(startupClass).getDirectory();
+        final DependencyContainer dependencyContainer = run(new File[]{new File(directory)}, configuration);
 
-        ClassLocator classLocator = new ClassLocatorForDirectory();
-        if (directory.getDirectoryType() == DirectoryType.JAR_FILE) {
-            classLocator = new ClassLocatorForJarFile();
-        }
+        runStartUpMethod(startupClass, dependencyContainer);
 
-        final Set<Class<?>> locateClasses = classLocator.locateClasses(directory.getDirectory());
-        final Set<ServiceDetails> mappedServices = scanningService.mapServices(locateClasses);
-        final List<ServiceDetails> serviceDetails = instantiationService.instantiateServicesAndBeans(mappedServices);
-
-        dependencyContainer.init(locateClasses, serviceDetails, objectInstantiationService);
-        runStartUpMethod(startupClass);
         return dependencyContainer;
     }
 
-    private static void runStartUpMethod(Class<?> startupClass) {
-        ServiceDetails serviceDetails = dependencyContainer.getServiceDetails(startupClass);
+    public static DependencyContainer run(File[] startupDirectories, MyConfiguration configuration) {
+        final ServicesScanningService scanningService = new ServicesScanningServiceImpl(configuration.scanning());
+        final ObjectInstantiationService objectInstantiationService = new ObjectInstantiationServiceImpl();
+        final ServicesInstantiationService instantiationService = new ServicesInstantiationServiceImpl(configuration.instantiations(), objectInstantiationService);
+
+        final Set<Class<?>> locateClasses = locateClasses(startupDirectories, configuration);
+        final Set<ServiceDetails> mappedServices = scanningService.mapServices(locateClasses);
+        final List<ServiceDetails> serviceDetails = instantiationService.instantiateServicesAndBeans(mappedServices);
+
+        final DependencyContainer dependencyContainer = new DependencyContainerImpl();
+        dependencyContainer.init(locateClasses, serviceDetails, objectInstantiationService);
+        return dependencyContainer;
+    }
+
+    private static Set<Class<?>> locateClasses(File[] startupDirectories, MyConfiguration configuration) {
+        final Set<Class<?>> locatedClasses = new HashSet<>();
+        final DirectoryResolver directoryResolver = new DirectoryResolverImpl();
+
+        for (File startupDirectory : startupDirectories) {
+            final Directory directory = directoryResolver.resolveDirectory(startupDirectory);
+
+            ClassLocator classLocator = new ClassLocatorForDirectory(configuration);
+            if (directory.getDirectoryType() == DirectoryType.JAR_FILE) {
+                classLocator = new ClassLocatorForJarFile(configuration);
+            }
+
+            locatedClasses.addAll(classLocator.locateClasses(directory.getDirectory()));
+        }
+        return locatedClasses;
+    }
+
+    private static void runStartUpMethod(Class<?> startupClass, DependencyContainer dependencyContainer) {
+        final ServiceDetails serviceDetails = dependencyContainer.getServiceDetails(startupClass);
         if (serviceDetails == null) {
             return;
         }

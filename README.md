@@ -50,4 +50,4 @@ Refer to "test\java\com\truongmg\di\MyInjectorTest.java"
 
 2. Not able to Autowired fields, only constructor is supported.
 
-3.
+3. Scope Annotation is not supported yet.

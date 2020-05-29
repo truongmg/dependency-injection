@@ -16,7 +16,7 @@ public class ServiceDetails {
 
     private Class<?> serviceType;
 
-    private List<Class<? extends Annotation>> annotations;
+    private Annotation annotation;
 
     private Constructor<?> targetConstructor;
 
@@ -36,14 +36,13 @@ public class ServiceDetails {
 
     public ServiceDetails() {
         this.dependantServices = new ArrayList<>();
-        this.annotations = new ArrayList<>();
     }
 
-    public ServiceDetails(Class<?> serviceType, Collection<Class<? extends Annotation>> annotations, Constructor<?> targetConstructor,
+    public ServiceDetails(Class<?> serviceType, Annotation annotation, Constructor<?> targetConstructor,
                           Method postConstructMethod, Method preDestroyMethod, Method[] beans, ScopeType scopeType) {
         this();
         this.serviceType = serviceType;
-        this.addAnnotations(annotations);
+        this.annotation = annotation;
         this.targetConstructor = targetConstructor;
         this.postConstructMethod = postConstructMethod;
         this.preDestroyMethod = preDestroyMethod;
@@ -59,16 +58,12 @@ public class ServiceDetails {
         this.serviceType = serviceType;
     }
 
-    public List<Class<? extends Annotation>> getAnnotations() {
-        return annotations;
+    public Annotation getAnnotation() {
+        return annotation;
     }
 
-    public void addAnnotation(Class<? extends Annotation> annotation) {
-        this.annotations.add(annotation);
-    }
-
-    public void addAnnotations(Collection<Class<? extends Annotation>> annotations) {
-        this.annotations.addAll(annotations);
+    public void setAnnotation(Annotation annotation) {
+        this.annotation = annotation;
     }
 
     public Constructor<?> getTargetConstructor() {

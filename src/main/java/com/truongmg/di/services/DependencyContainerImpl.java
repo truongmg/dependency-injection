@@ -7,31 +7,36 @@ import com.truongmg.di.models.ServiceDetails;
 import com.truongmg.di.services.instantiations.ObjectInstantiationService;
 
 import java.lang.annotation.Annotation;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class DependencyContainerImpl implements DependencyContainer {
 
     private static final String ALREADY_INITIALIZED_MSG = "Dependency Container already initialized";
-    private static final String SERVICE_NOT_FOUND_MSG = "";
+    private static final String SERVICE_NOT_FOUND_MSG = "Service '%s' was not found.";
     private boolean isInit;
-    private List<ServiceDetails> servicesAndBeans;
+    private Collection<ServiceDetails> servicesAndBeans;
     private ObjectInstantiationService instantiationService;
-    private Collection<Class<?>> locatedClasses;
+    private Collection<Class<?>> allLocatedClasses;
+    private final Map<Class<?>, ServiceDetails> cachedServices;
+    private final Map<Class<?>, Collection<ServiceDetails>> cachedImplementations;
+    private final Map<Class<? extends Annotation>, Collection<ServiceDetails>> cachedServicesByAnnotation;
+
 
     public DependencyContainerImpl() {
         this.isInit = false;
+        cachedServices = new HashMap<>();
+        cachedImplementations = new HashMap<>();
+        cachedServicesByAnnotation = new HashMap<>();
     }
 
     @Override
-    public void init(Collection<Class<?>> locatedClasses, List<ServiceDetails> servicesAndBeans, ObjectInstantiationService instantiationService) throws AlreadyInitializedException {
+    public void init(Collection<Class<?>> locatedClasses, Collection<ServiceDetails> servicesAndBeans, ObjectInstantiationService instantiationService) throws AlreadyInitializedException {
         if (this.isInit) {
             throw new AlreadyInitializedException(ALREADY_INITIALIZED_MSG);
         }
 
-        this.locatedClasses = locatedClasses;
+        this.allLocatedClasses = locatedClasses;
         this.servicesAndBeans = servicesAndBeans;
         this.instantiationService = instantiationService;
         this.isInit = true;
@@ -39,20 +44,21 @@ public class DependencyContainerImpl implements DependencyContainer {
     }
 
     @Override
-    public void reload(ServiceDetails serviceDetails, boolean reloadDependantServices) {
+    public void reload(ServiceDetails serviceDetails) {
         this.instantiationService.destroyInstance(serviceDetails);
         this.handleReload(serviceDetails);
-
-        if (reloadDependantServices) {
-            for (ServiceDetails dependantService : serviceDetails.getDependantServices()) {
-                this.reload(dependantService, reloadDependantServices);
-            }
-        }
     }
 
     private void handleReload(ServiceDetails serviceDetails) {
         if (serviceDetails instanceof ServiceBeanDetails) {
-            this.instantiationService.createBeanInstance((ServiceBeanDetails) serviceDetails);
+            ServiceBeanDetails serviceBeanDetails = (ServiceBeanDetails) serviceDetails;
+            this.instantiationService.createBeanInstance(serviceBeanDetails);
+
+            if (!serviceBeanDetails.hasProxyInstance()) {
+                for (ServiceDetails dependantService : serviceDetails.getDependantServices()) {
+                    this.reload(dependantService);
+                }
+            }
         } else {
             this.instantiationService.createInstance(serviceDetails, this.collectDependencies(serviceDetails));
         }
@@ -69,43 +75,39 @@ public class DependencyContainerImpl implements DependencyContainer {
     }
 
     @Override
-    public <T> T reload(T service) {
-        return this.reload(service, false);
-    }
+    public void reload(Class<?> serviceType) {
+        final ServiceDetails serviceDetails = this.getServiceDetails(serviceType);
+        if (serviceDetails == null) {
+            throw new IllegalArgumentException(String.format(SERVICE_NOT_FOUND_MSG, serviceType));
+        }
 
-    @Override
-    public <T> T reload(T service, boolean reloadDependantServices) {
-        final ServiceDetails serviceDetails = this.getServiceDetails(service.getClass());
-        if (serviceDetails == null) return null;
-
-        this.reload(serviceDetails, reloadDependantServices);
-        return (T) serviceDetails.getActualInstance();
+        this.reload(serviceDetails);
     }
 
     @Override
     public <T> T getService(Class<T> serviceType) {
         final ServiceDetails serviceDetails = this.getServiceDetails(serviceType);
-        if (serviceDetails != null) return (T) serviceDetails.getActualInstance();
+        if (serviceDetails != null) return (T) serviceDetails.getProxyInstance();
         return null;
     }
 
     @Override
     public ServiceDetails getServiceDetails(Class<?> serviceType) {
-        ServiceDetails serviceDetails = findServiceDetails(serviceType);
-
-        if (serviceDetails != null) {
-            if (serviceDetails.getScopeType() == ScopeType.PROTOTYPE) {
-                serviceDetails.setInstance(this.getNewInstance(serviceType));
-            }
+        if (this.cachedServices.containsKey(serviceType)) {
+            return this.cachedServices.get(serviceType);
         }
 
+        ServiceDetails serviceDetails = findServiceDetails(serviceType);
+        if (serviceDetails != null) {
+            this.cachedServices.put(serviceType, serviceDetails);
+        }
 
         return serviceDetails;
     }
 
     private <T> ServiceDetails findServiceDetails(Class<T> serviceType) {
         return this.servicesAndBeans.stream()
-                    .filter(sd -> serviceType.isAssignableFrom(sd.getServiceType()))
+                    .filter(sd -> serviceType.isAssignableFrom(sd.getProxyInstance().getClass()) || serviceType.isAssignableFrom(sd.getServiceType()))
                     .findFirst()
                     .orElse(null);
     }
@@ -126,26 +128,56 @@ public class DependencyContainerImpl implements DependencyContainer {
     }
 
     @Override
-    public List<ServiceDetails> getServicesByAnnotation(Class<? extends Annotation> annotationType) {
-        return this.servicesAndBeans.stream()
-                .filter(sd -> sd.getAnnotations().contains(annotationType))
+    public Collection<ServiceDetails> getServicesByAnnotation(Class<? extends Annotation> annotationType) {
+        if (cachedServicesByAnnotation.containsKey(annotationType)) {
+            return cachedServicesByAnnotation.get(annotationType);
+        }
+
+        List<ServiceDetails> servicesByAnnotation = this.servicesAndBeans.stream()
+                .filter(sd -> sd.getAnnotation() != null && sd.getAnnotation().annotationType() == annotationType)
                 .collect(Collectors.toList());
+
+        this.cachedServicesByAnnotation.put(annotationType, servicesByAnnotation);
+        return servicesByAnnotation;
     }
 
     @Override
-    public List<Object> getAllServices() {
-        return this.servicesAndBeans.stream()
-                .map(ServiceDetails::getProxyInstance)
+    public Collection<ServiceDetails> getImplementations(Class<?> serviceType) {
+        if (this.cachedImplementations.containsKey(serviceType)) {
+            return this.cachedImplementations.get(serviceType);
+        }
+
+        List<ServiceDetails> implementations = this.servicesAndBeans.stream()
+                .filter(sd -> serviceType.isAssignableFrom(sd.getServiceType()))
                 .collect(Collectors.toList());
+
+        this.cachedImplementations.put(serviceType, implementations);
+        return implementations;
     }
 
     @Override
-    public List<ServiceDetails> getAllServiceDetails() {
-        return Collections.unmodifiableList(this.servicesAndBeans);
+    public Collection<ServiceDetails> getAllServices() {
+        return this.servicesAndBeans;
     }
 
     @Override
-    public Collection<Class<?>> getLocatedClasses() {
-        return Collections.unmodifiableCollection(this.locatedClasses);
+    public Collection<Class<?>> getAllScannedClasses() {
+        return this.allLocatedClasses;
+    }
+
+    @Override
+    public void update(Object service) {
+        this.update(service.getClass(), service);
+
+    }
+
+    @Override
+    public void update(Class<?> serviceType, Object serviceInstance) {
+        ServiceDetails serviceDetails = this.getServiceDetails(serviceType);
+        if (serviceDetails == null) {
+            throw new IllegalArgumentException(String.format(SERVICE_NOT_FOUND_MSG, serviceType.getName()));
+        }
+        this.instantiationService.destroyInstance(serviceDetails);
+        serviceDetails.setInstance(serviceInstance);
     }
 }

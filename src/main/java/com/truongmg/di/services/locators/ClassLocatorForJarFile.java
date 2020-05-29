@@ -1,5 +1,6 @@
 package com.truongmg.di.services.locators;
 
+import com.truongmg.di.config.MyConfiguration;
 import com.truongmg.di.constants.Constants;
 import com.truongmg.di.exceptions.ClassLocationException;
 
@@ -13,6 +14,11 @@ import java.util.jar.JarFile;
 
 public class ClassLocatorForJarFile implements ClassLocator {
 
+    private final ClassLoader classLoader;
+
+    public ClassLocatorForJarFile(MyConfiguration configuration) {
+        this.classLoader = configuration.scanning().getClassLoader();
+    }
 
     public Set<Class<?>> locateClasses(String directory) throws ClassLocationException {
         final Set<Class<?>> locatedClasses = new HashSet<Class<?>>();
@@ -32,7 +38,7 @@ public class ClassLocatorForJarFile implements ClassLocator {
                         .replaceAll("\\\\", ".")
                         .replaceAll("/", ".");
 
-                locatedClasses.add(Class.forName(className));
+                locatedClasses.add(Class.forName(className, true, this.classLoader));
 
             }
 

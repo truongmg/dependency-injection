@@ -1,9 +1,10 @@
 package com.truongmg.di.services.instantiations;
 
 import com.truongmg.di.annotations.*;
-import com.truongmg.di.config.configurations.CustomAnnotationConfiguration;
+import com.truongmg.di.config.configurations.ScanningConfiguration;
 import com.truongmg.di.enums.ScopeType;
 import com.truongmg.di.models.ServiceDetails;
+import com.truongmg.di.utils.AliasFinder;
 import com.truongmg.di.utils.ServiceDetailsConstructComparator;
 
 import java.lang.annotation.Annotation;
@@ -14,25 +15,25 @@ import java.util.stream.Collectors;
 
 public class ServicesScanningServiceImpl implements ServicesScanningService {
 
-    private final CustomAnnotationConfiguration configuration;
+    private final ScanningConfiguration configuration;
 
-    public ServicesScanningServiceImpl(CustomAnnotationConfiguration configuration) {
+    public ServicesScanningServiceImpl(ScanningConfiguration configuration) {
         this.configuration = configuration;
         this.init();
     }
 
     @Override
     public Set<ServiceDetails> mapServices(Set<Class<?>> locatedClasses) {
-        final Map<Class<?>, List<Class<? extends Annotation>>> serviceClassesMap = this.filterServiceClasses(locatedClasses);
+        final Map<Class<?>, Annotation> serviceClassesMap = this.filterServiceClasses(locatedClasses);
         final Set<ServiceDetails> serviceDetailsSet = new HashSet<>();
 
-        for (Map.Entry<Class<?>, List<Class<? extends Annotation>>> entry : serviceClassesMap.entrySet()) {
+        for (Map.Entry<Class<?>, Annotation> entry : serviceClassesMap.entrySet()) {
             Class<?> cls = entry.getKey();
-            List<Class<? extends Annotation>> annotations = entry.getValue();
+            Annotation annotation = entry.getValue();
 
             final ServiceDetails serviceDetails = new ServiceDetails(
                     cls,
-                    annotations,
+                    annotation,
                     this.findSuitableConstructor(cls),
                     this.findVoidMethodWithZeroParamsAndAnnotations(PostConstruct.class, cls),
                     this.findVoidMethodWithZeroParamsAndAnnotations(PreDestroy.class, cls),
@@ -48,9 +49,9 @@ public class ServicesScanningServiceImpl implements ServicesScanningService {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private Map<Class<?>, List<Class<? extends Annotation>>> filterServiceClasses(Collection<Class<?>> scannedClasses) {
+    private Map<Class<?>, Annotation> filterServiceClasses(Collection<Class<?>> scannedClasses) {
         final Set<Class<? extends Annotation>> serviceAnnotations = this.configuration.getCustomServiceAnnotations();
-        final Map<Class<?>, List<Class<? extends Annotation>>> locatedClasses = new HashMap<>();
+        final Map<Class<?>, Annotation> locatedClasses = new HashMap<>();
 
         for (Class<?> scannedClass : scannedClasses) {
             if (scannedClass.isInterface() || scannedClass.isEnum() || scannedClass.isAnnotation()) {
@@ -60,20 +61,19 @@ public class ServicesScanningServiceImpl implements ServicesScanningService {
             for (Annotation annotation : scannedClass.getAnnotations()) {
                 Class<? extends Annotation> annotationType = annotation.annotationType();
                 if (serviceAnnotations.contains(annotationType)) {
-                    locatedClasses.put(scannedClass, Collections.singletonList(annotationType));
+                    locatedClasses.put(scannedClass, annotation);
                     break;
                 }
-
-                if (annotationType.isAnnotationPresent(AliasFor.class)) {
-                    Class<? extends Annotation> aliasValue = annotationType.getAnnotation(AliasFor.class).value();
-                    if (serviceAnnotations.contains(aliasValue)) {
-                        locatedClasses.put(scannedClass, Arrays.asList(new Class[]{scannedClass, annotationType}));
-                        break;
-                    }
-                }
             }
-
         }
+
+        this.configuration.getAdditionalClasses().forEach((cls, annotationCls) -> {
+            Annotation annotation = null;
+            if (annotationCls != null && cls.isAnnotationPresent(annotationCls)) {
+                annotation = cls.getAnnotation(annotationCls);
+            }
+            locatedClasses.put(cls, annotation);
+        });
 
         return locatedClasses;
     }
@@ -101,20 +101,6 @@ public class ServicesScanningServiceImpl implements ServicesScanningService {
                     break;
                 }
 
-                for (Annotation declaredAnnotation : method.getDeclaredAnnotations()) {
-                    Class<? extends Annotation> annotationType = declaredAnnotation.annotationType();
-                    if (annotationType.isAnnotationPresent(AliasFor.class)) {
-                        final Class<? extends Annotation> aliasValue = annotationType.getAnnotation(AliasFor.class).value();
-
-                        if (aliasValue == beanAnnotation) {
-                            method.setAccessible(true);
-                            beanMethods.add(method);
-
-                            break;
-                        }
-                    }
-                }
-
             }
         }
 
@@ -129,13 +115,10 @@ public class ServicesScanningServiceImpl implements ServicesScanningService {
             }
 
             for (Annotation declaredAnnotation : ctr.getDeclaredAnnotations()) {
-                Class<? extends Annotation> annotationType = declaredAnnotation.annotationType();
-                if (annotationType.isAnnotationPresent(AliasFor.class)) {
-                    Class<? extends Annotation> aliasValue = annotationType.getAnnotation(AliasFor.class).value();
-                    if (aliasValue == Autowired.class) {
-                        ctr.setAccessible(true);
-                        return ctr;
-                    }
+                Class<? extends Annotation> aliasAnnotation = AliasFinder.getAliasAnnotation(declaredAnnotation, Autowired.class);
+                if (aliasAnnotation != null) {
+                    ctr.setAccessible(true);
+                    return ctr;
                 }
             }
         }
@@ -158,17 +141,16 @@ public class ServicesScanningServiceImpl implements ServicesScanningService {
             }
 
             for (Annotation declaredAnnotation : method.getDeclaredAnnotations()) {
-                Class<? extends Annotation> annotationType = declaredAnnotation.annotationType();
-                if (annotationType.isAnnotationPresent(AliasFor.class)) {
-                    final Class<? extends Annotation> aliasValue = annotationType.getAnnotation(AliasFor.class).value();
-                    if (aliasValue == Autowired.class) {
-                        method.setAccessible(true);
-                        return method;
-                    }
+                Class<? extends Annotation> aliasAnnotation = AliasFinder.getAliasAnnotation(declaredAnnotation, annotation);
+                if (aliasAnnotation != null) {
+                    method.setAccessible(true);
+                    return method;
                 }
             }
 
-            return null;
+            if (cls.getSuperclass() != null) {
+                return this.findVoidMethodWithZeroParamsAndAnnotations(annotation, cls.getSuperclass());
+            }
         }
 
         return null;

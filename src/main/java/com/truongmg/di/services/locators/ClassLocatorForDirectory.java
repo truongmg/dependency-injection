@@ -1,5 +1,6 @@
 package com.truongmg.di.services.locators;
 
+import com.truongmg.di.config.MyConfiguration;
 import com.truongmg.di.constants.Constants;
 import com.truongmg.di.exceptions.ClassLocationException;
 
@@ -13,7 +14,10 @@ public class ClassLocatorForDirectory implements ClassLocator {
 
     private final Set<Class<?>> locatedClasses;
 
-    public ClassLocatorForDirectory() {
+    private final ClassLoader classLoader;
+
+    public ClassLocatorForDirectory(MyConfiguration configuration) {
+        this.classLoader = configuration.scanning().getClassLoader();
         this.locatedClasses = new HashSet<>();
     }
 
@@ -47,7 +51,7 @@ public class ClassLocatorForDirectory implements ClassLocator {
             final String className = packageName + file.getName()
                     .replace(Constants.JAVA_BINARY_EXTENSION, "");
 
-            this.locatedClasses.add(Class.forName(className));
+            this.locatedClasses.add(Class.forName(className, true, this.classLoader));
         }
     }
 
